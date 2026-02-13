@@ -17,6 +17,19 @@ import {
   Filter as FilterIcon,
   Search,
   PlusCircle,
+  Calendar,
+  Download,
+  LayoutGrid,
+  List,
+  BarChart3,
+  SortAsc,
+  SortDesc,
+  Volume2,
+  VolumeX,
+  ChevronLeft,
+  ChevronRight,
+  Timer,
+  Copy,
 } from "lucide-react";
 
 const allowedStatuses = ["placed", "confirmed", "preparing", "out-for-delivery", "delivered", "cancelled"];
@@ -40,9 +53,37 @@ const statusPillClass = {
 
 const formatINR = (n) => Number(n || 0).toLocaleString("en-IN");
 
+// Tiny beep for new order (no external assets)
+const useBeep = () => {
+  const ctxRef = useRef(null);
+  const play = () => {
+    try {
+      if (typeof window === "undefined") return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!ctxRef.current) ctxRef.current = new AC();
+      const ctx = ctxRef.current;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = 880;
+      o.connect(g);
+      g.connect(ctx.destination);
+      const now = ctx.currentTime;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.12, now + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+      o.start(now);
+      o.stop(now + 0.24);
+    } catch (_) {}
+  };
+  return play;
+};
+
 export default function AdminDashboard() {
   const { add } = useContext(NotificationsContext);
   const { adminOrderPing, resetAdminPing } = useContext(SocketContext);
+  const beep = useBeep();
 
   // Restaurants
   const [restaurants, setRestaurants] = useState([]);
@@ -65,6 +106,17 @@ export default function AdminDashboard() {
   const [restFilter, setRestFilter] = useState("all");
   const [expandedId, setExpandedId] = useState(null);
 
+  // Enhanced filters and prefs
+  const [dateRange, setDateRange] = useState("all"); // all | today | 7d | 30d | custom
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [sortBy, setSortBy] = useState("newest"); // newest | oldest | amount-desc | amount-asc
+  const [viewMode, setViewMode] = useState("grid"); // grid | list
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [soundOn, setSoundOn] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+
   // Manage forms
   const [restName, setRestName] = useState("");
   const [restDesc, setRestDesc] = useState("");
@@ -86,10 +138,42 @@ export default function AdminDashboard() {
   // Alerts (for Notifications panel)
   const [alerts, setAlerts] = useState([]);
 
+  // Restaurant list utilities
+  const [restSearch, setRestSearch] = useState("");
+
   const adminHeaders = useMemo(
     () => ({ headers: { Authorization: `Bearer ${localStorage.getItem("adminToken") || ""}` } }),
     []
   );
+
+  // Persist basic UI prefs
+  useEffect(() => {
+    try {
+      const get = (k, def) => localStorage.getItem(k) || def;
+      setViewMode(get("ad_viewMode", "grid"));
+      setSortBy(get("ad_sortBy", "newest"));
+      setStatusFilter(get("ad_statusFilter", "all"));
+      setRestFilter(get("ad_restFilter", "all"));
+      setDateRange(get("ad_dateRange", "all"));
+      setPageSize(Number(get("ad_pageSize", "10")) || 10);
+      setSoundOn(get("ad_soundOn", "true") === "true");
+      setAutoRefresh(get("ad_autoRefresh", "false") === "true");
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ad_viewMode", viewMode);
+      localStorage.setItem("ad_sortBy", sortBy);
+      localStorage.setItem("ad_statusFilter", statusFilter);
+      localStorage.setItem("ad_restFilter", restFilter);
+      localStorage.setItem("ad_dateRange", dateRange);
+      localStorage.setItem("ad_pageSize", String(pageSize));
+      localStorage.setItem("ad_soundOn", String(soundOn));
+      localStorage.setItem("ad_autoRefresh", String(autoRefresh));
+    } catch {}
+  }, [viewMode, sortBy, statusFilter, restFilter, dateRange, pageSize, soundOn, autoRefresh]);
 
   // Add alert
   const pushAlert = (type, title, text) => {
@@ -141,6 +225,7 @@ export default function AdminDashboard() {
             message: `${newOnes.length} new order${newOnes.length > 1 ? "s" : ""} received`,
             timeout: 4000,
           });
+          if (soundOn) beep();
         }
       }
       prevOrderIdsRef.current = nextIds;
@@ -161,6 +246,16 @@ export default function AdminDashboard() {
     fetchOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Optional auto-refresh (socket remains primary)
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(() => {
+      fetchOrders();
+    }, 30000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh]);
 
   // Refresh orders on socket ping
   useEffect(() => {
@@ -315,6 +410,31 @@ export default function AdminDashboard() {
     }
   };
 
+  // Export orders (filtered set)
+  const exportOrders = () => {
+    const header = ["Order ID", "Customer", "Restaurant", "Total", "Status", "Payment", "Created At"];
+    const rows = filteredOrders.map((o) => [
+      o._id,
+      o.user?.name || "",
+      o.restaurant?.name || "",
+      o.total,
+      o.status,
+      o.paymentMethod === "cod" ? "COD" : "Online",
+      o.createdAt ? new Date(o.createdAt).toLocaleString() : "",
+    ]);
+    const csv = [header, ...rows].map((r) => r.map((x) => `"${String(x ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orders-${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    pushAlert("success", "Export Complete", "Orders exported as CSV");
+  };
+
   // Autoclear message
   useEffect(() => {
     if (message) {
@@ -328,10 +448,16 @@ export default function AdminDashboard() {
     const total = orders.length;
     const delivered = orders.filter((o) => o.status === "delivered").length;
     const open = orders.filter((o) => !["delivered", "cancelled"].includes(o.status)).length;
-    const revenue = orders
-      .filter((o) => o.status === "delivered")
-      .reduce((sum, o) => sum + Number(o.total || 0), 0);
+    const revenue = orders.filter((o) => o.status === "delivered").reduce((sum, o) => sum + Number(o.total || 0), 0);
     return { total, delivered, open, revenue };
+  }, [orders]);
+
+  // Derived: status distribution
+  const statusDistribution = useMemo(() => {
+    const dist = {};
+    for (const s of allowedStatuses) dist[s] = 0;
+    for (const o of orders) dist[o.status] = (dist[o.status] || 0) + 1;
+    return dist;
   }, [orders]);
 
   // Derived: restaurant filter options from orders
@@ -345,15 +471,32 @@ export default function AdminDashboard() {
     return Array.from(map, ([id, name]) => ({ id, name }));
   }, [orders]);
 
-  // Filtered orders list
+  // Helpers: date range check
+  const inDateRange = (createdAt) => {
+    if (!createdAt || dateRange === "all") return true;
+    const d = new Date(createdAt);
+    const now = new Date();
+    const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    if (dateRange === "today") return startOfDay(d).getTime() === startOfDay(now).getTime();
+    if (dateRange === "7d") return now - d <= 7 * 24 * 60 * 60 * 1000;
+    if (dateRange === "30d") return now - d <= 30 * 24 * 60 * 60 * 1000;
+    if (dateRange === "custom") {
+      const from = customFrom ? new Date(customFrom) : null;
+      const to = customTo ? new Date(customTo + "T23:59:59") : null;
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    }
+    return true;
+  };
+
+  // Filtered + sorted orders list
   const filteredOrders = useMemo(() => {
     let list = [...orders];
-    if (statusFilter !== "all") {
-      list = list.filter((o) => o.status === statusFilter);
-    }
-    if (restFilter !== "all") {
-      list = list.filter((o) => String(o.restaurant?._id || o.restaurant) === restFilter);
-    }
+
+    if (statusFilter !== "all") list = list.filter((o) => o.status === statusFilter);
+    if (restFilter !== "all") list = list.filter((o) => String(o.restaurant?._id || o.restaurant) === restFilter);
+
     const q = searchText.trim().toLowerCase();
     if (q) {
       list = list.filter((o) => {
@@ -363,8 +506,33 @@ export default function AdminDashboard() {
         return id.includes(q) || user.includes(q) || rest.includes(q);
       });
     }
+
+    // Date range
+    list = list.filter((o) => inDateRange(o.createdAt));
+
+    // Sorting
+    list.sort((a, b) => {
+      if (sortBy === "newest") return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+      if (sortBy === "oldest") return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+      if (sortBy === "amount-desc") return Number(b.total || 0) - Number(a.total || 0);
+      if (sortBy === "amount-asc") return Number(a.total || 0) - Number(b.total || 0);
+      return 0;
+    });
+
     return list;
-  }, [orders, statusFilter, restFilter, searchText]);
+  }, [orders, statusFilter, restFilter, searchText, sortBy, dateRange, customFrom, customTo]);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+  const pageClamped = Math.min(Math.max(1, page), totalPages);
+  useEffect(() => {
+    if (page !== pageClamped) setPage(pageClamped);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalPages]);
+  const pagedOrders = useMemo(() => {
+    const start = (pageClamped - 1) * pageSize;
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, pageClamped, pageSize]);
 
   // UI components
   const StatCard = ({ title, value, icon, gradient }) => (
@@ -388,6 +556,35 @@ export default function AdminDashboard() {
     </motion.div>
   );
 
+  const copyId = async (id) => {
+    try {
+      await navigator.clipboard.writeText(String(id));
+      add?.({ type: "success", title: "Copied", message: `Order #${String(id).slice(-6)} copied`, timeout: 2000 });
+    } catch {}
+  };
+
+  const orderAge = (createdAt) => {
+    if (!createdAt) return "";
+    const mins = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000));
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    const rm = mins % 60;
+    return `${hrs}h ${rm}m ago`;
+  };
+
+  const statusProgress = (status) => {
+    const idx = allowedStatuses.indexOf(status);
+    if (idx < 0) return 0;
+    return Math.round((idx / (allowedStatuses.length - 1)) * 100);
+  };
+
+  // Filter restaurants (UI only)
+  const filteredRestaurants = useMemo(() => {
+    const q = restSearch.trim().toLowerCase();
+    if (!q) return restaurants;
+    return restaurants.filter((r) => [r.name, r.location, r.address].some((x) => String(x || "").toLowerCase().includes(q)));
+  }, [restaurants, restSearch]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white p-6">
       {/* Top header */}
@@ -407,6 +604,38 @@ export default function AdminDashboard() {
               <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-red-500 text-white">+{adminOrderPing}</span>
             )}
           </span>
+
+          {/* Sound toggle */}
+          <button
+            onClick={() => setSoundOn((s) => !s)}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border shadow bg-white hover:bg-gray-50 transition ${
+              soundOn ? "text-green-600 border-green-200" : "text-gray-600"
+            }`}
+            title="Toggle sound for new orders"
+          >
+            {soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />} Sound
+          </button>
+
+          {/* Auto-refresh toggle */}
+          <button
+            onClick={() => setAutoRefresh((v) => !v)}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border shadow bg-white hover:bg-gray-50 transition ${
+              autoRefresh ? "text-blue-600 border-blue-200" : "text-gray-600"
+            }`}
+            title="Auto-refresh every 30s"
+          >
+            <Timer size={16} /> Auto
+          </button>
+
+          {/* Export */}
+          <button
+            onClick={exportOrders}
+            className="inline-flex items-center gap-2 bg-white text-gray-800 px-3 py-2 rounded-lg shadow border hover:bg-gray-50 transition"
+            title="Export filtered orders as CSV"
+          >
+            <Download size={16} /> Export
+          </button>
+
           <button
             onClick={() => {
               fetchOrders();
@@ -466,11 +695,13 @@ export default function AdminDashboard() {
             animate={{ opacity: 1, y: 0 }}
             className="bg-white rounded-2xl shadow-lg border p-5"
           >
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+            {/* Controls row */}
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
               <h3 className="text-xl font-semibold flex items-center gap-2">
                 🚚 Live Orders
-                <span className="text-xs font-medium text-gray-500">({filteredOrders.length} shown)</span>
+                <span className="text-xs font-medium text-gray-500">({filteredOrders.length} filtered)</span>
               </h3>
+
               <div className="flex flex-wrap items-center gap-2">
                 {/* Status tabs */}
                 <div className="flex overflow-x-auto rounded-full bg-gray-100 p-1">
@@ -479,7 +710,10 @@ export default function AdminDashboard() {
                     return (
                       <button
                         key={s}
-                        onClick={() => setStatusFilter(s)}
+                        onClick={() => {
+                          setStatusFilter(s);
+                          setPage(1);
+                        }}
                         className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition ${
                           active ? "bg-white shadow font-semibold" : "text-gray-600 hover:text-gray-800"
                         }`}
@@ -495,7 +729,10 @@ export default function AdminDashboard() {
                   <FilterIcon size={16} />
                   <select
                     value={restFilter}
-                    onChange={(e) => setRestFilter(e.target.value)}
+                    onChange={(e) => {
+                      setRestFilter(e.target.value);
+                      setPage(1);
+                    }}
                     className="border rounded-lg px-2 py-1.5 text-sm"
                   >
                     <option value="all">All Restaurants</option>
@@ -507,12 +744,114 @@ export default function AdminDashboard() {
                   </select>
                 </label>
 
+                {/* Date range */}
+                <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+                  <Calendar size={16} />
+                  <select
+                    value={dateRange}
+                    onChange={(e) => {
+                      setDateRange(e.target.value);
+                      setPage(1);
+                    }}
+                    className="border rounded-lg px-2 py-1.5 text-sm"
+                  >
+                    <option value="all">All time</option>
+                    <option value="today">Today</option>
+                    <option value="7d">Last 7 days</option>
+                    <option value="30d">Last 30 days</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </label>
+
+                {dateRange === "custom" && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={customFrom}
+                      onChange={(e) => {
+                        setCustomFrom(e.target.value);
+                        setPage(1);
+                      }}
+                      className="border rounded-lg px-2 py-1.5 text-sm"
+                    />
+                    <span className="text-gray-400">to</span>
+                    <input
+                      type="date"
+                      value={customTo}
+                      onChange={(e) => {
+                        setCustomTo(e.target.value);
+                        setPage(1);
+                      }}
+                      className="border rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                )}
+
+                {/* Sort */}
+                <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+                  {sortBy.includes("amount") ? <SortDesc size={16} /> : <SortAsc size={16} />}
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="border rounded-lg px-2 py-1.5 text-sm"
+                  >
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="amount-desc">Amount: High to Low</option>
+                    <option value="amount-asc">Amount: Low to High</option>
+                  </select>
+                </label>
+
+                {/* Page size */}
+                <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+                  <span>Page</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value) || 10);
+                      setPage(1);
+                    }}
+                    className="border rounded-lg px-2 py-1.5 text-sm"
+                  >
+                    {[6, 10, 12, 16, 20].map((n) => (
+                      <option key={n} value={n}>
+                        {n}/page
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {/* View toggle */}
+                <div className="flex rounded-full bg-gray-100 p-1">
+                  <button
+                    onClick={() => setViewMode("grid")}
+                    className={`px-3 py-1.5 rounded-full text-sm transition flex items-center gap-1 ${
+                      viewMode === "grid" ? "bg-white shadow font-semibold" : "text-gray-600 hover:text-gray-800"
+                    }`}
+                    title="Grid View"
+                  >
+                    <LayoutGrid size={16} /> Grid
+                  </button>
+                  <button
+                    onClick={() => setViewMode("list")}
+                    className={`px-3 py-1.5 rounded-full text-sm transition flex items-center gap-1 ${
+                      viewMode === "list" ? "bg-white shadow font-semibold" : "text-gray-600 hover:text-gray-800"
+                    }`}
+                    title="List View"
+                  >
+                    <List size={16} /> List
+                  </button>
+                </div>
+
                 {/* Search */}
                 <div className="relative">
                   <Search size={16} className="absolute left-2 top-2.5 text-gray-400" />
                   <input
                     value={searchText}
-                    onChange={(e) => setSearchText(e.target.value)}
+                    onChange={(e) => {
+                      setSearchText(e.target.value);
+                      setPage(1);
+                    }}
                     placeholder="Search ID / user / restaurant"
                     className="border rounded-lg pl-7 pr-3 py-1.5 text-sm w-64"
                   />
@@ -520,23 +859,25 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+            {/* Orders Content */}
             {ordersLoading ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="h-40 rounded-xl bg-gray-100 animate-pulse" />
+              <div className={`grid gap-4 ${viewMode === "grid" ? "md:grid-cols-2" : ""}`}>
+                {Array.from({ length: viewMode === "grid" ? 4 : 3 }).map((_, i) => (
+                  <div key={i} className="h-28 rounded-xl bg-gray-100 animate-pulse" />
                 ))}
               </div>
             ) : ordersErr ? (
               <p className="text-red-500">{ordersErr}</p>
             ) : filteredOrders.length === 0 ? (
               <p className="text-gray-500">No orders match the filters.</p>
-            ) : (
+            ) : viewMode === "grid" ? (
               <div className="grid gap-4 md:grid-cols-2">
-                {filteredOrders.map((o, idx) => {
+                {pagedOrders.map((o, idx) => {
                   const itemsCount = (o.items || []).reduce((a, it) => a + Number(it.quantity || 0), 0);
                   const total = formatINR(o.total);
                   const created = o.createdAt ? new Date(o.createdAt).toLocaleString() : "";
                   const expanded = expandedId === o._id;
+                  const progress = statusProgress(o.status);
 
                   return (
                     <motion.div
@@ -548,16 +889,38 @@ export default function AdminDashboard() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="font-semibold text-gray-800">
+                          <div className="font-semibold text-gray-800 flex items-center gap-2">
                             Order <span className="font-mono text-sm">#{String(o._id).slice(-6)}</span>
+                            <button
+                              onClick={() => copyId(o._id)}
+                              title="Copy order ID"
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <Copy size={14} />
+                            </button>
                           </div>
                           <div className="text-xs text-gray-500 flex items-center gap-1">
-                            <Clock size={14} /> {created}
+                            <Clock size={14} /> {created} • {orderAge(o.createdAt)}
                           </div>
+
+                          {/* Status progress */}
+                          <div className="mt-2">
+                            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-2 bg-gradient-to-r from-pink-500 to-indigo-500"
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                            <div className="mt-1">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusPillClass[o.status]}`}
+                              >
+                                {statusLabels[o.status] || o.status}
+                              </span>
+                            </div>
+                          </div>
+
                           <div className="mt-2 flex flex-wrap gap-2">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusPillClass[o.status]}`}>
-                              {statusLabels[o.status] || o.status}
-                            </span>
                             <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
                               {itemsCount} items
                             </span>
@@ -567,6 +930,7 @@ export default function AdminDashboard() {
                             </span>
                           </div>
                         </div>
+
                         <div className="text-right">
                           <div className="text-lg font-bold text-gray-800">₹{total}</div>
                           <div className="text-xs text-gray-500 flex items-center gap-1 justify-end">
@@ -641,12 +1005,143 @@ export default function AdminDashboard() {
                   );
                 })}
               </div>
+            ) : (
+              // List view (compact)
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-600 border-b">
+                      <th className="py-2 pr-4">Order</th>
+                      <th className="py-2 pr-4">Date</th>
+                      <th className="py-2 pr-4">Customer</th>
+                      <th className="py-2 pr-4">Restaurant</th>
+                      <th className="py-2 pr-4">Items</th>
+                      <th className="py-2 pr-4">Payment</th>
+                      <th className="py-2 pr-4">Total</th>
+                      <th className="py-2 pr-4">Status</th>
+                      <th className="py-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedOrders.map((o) => {
+                      const itemsCount = (o.items || []).reduce((a, it) => a + Number(it.quantity || 0), 0);
+                      return (
+                        <tr key={o._id} className="border-b hover:bg-gray-50">
+                          <td className="py-2 pr-4">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono">#{String(o._id).slice(-6)}</span>
+                              <button className="text-gray-400 hover:text-gray-600" onClick={() => copyId(o._id)}>
+                                <Copy size={14} />
+                              </button>
+                            </div>
+                            <div className="text-xs text-gray-400">{orderAge(o.createdAt)}</div>
+                          </td>
+                          <td className="py-2 pr-4">{o.createdAt ? new Date(o.createdAt).toLocaleString() : ""}</td>
+                          <td className="py-2 pr-4">{o.user?.name || "User"}</td>
+                          <td className="py-2 pr-4">{o.restaurant?.name || "Restaurant"}</td>
+                          <td className="py-2 pr-4">{itemsCount}</td>
+                          <td className="py-2 pr-4">{o.paymentMethod === "cod" ? "COD" : "Online"}</td>
+                          <td className="py-2 pr-4 font-semibold">₹{formatINR(o.total)}</td>
+                          <td className="py-2 pr-4">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusPillClass[o.status]}`}>
+                              {statusLabels[o.status] || o.status}
+                            </span>
+                          </td>
+                          <td className="py-2">
+                            <select
+                              value={o.status}
+                              onChange={(e) => updateStatus(o._id, e.target.value)}
+                              disabled={updatingId === o._id}
+                              className="border rounded-lg px-2 py-1 text-xs"
+                            >
+                              {allowedStatuses.map((s) => (
+                                <option key={s} value={s}>
+                                  {statusLabels[s]}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Pagination */}
+            {!ordersLoading && filteredOrders.length > 0 && (
+              <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+                <div>
+                  Showing {(pageClamped - 1) * pageSize + 1}–
+                  {Math.min(filteredOrders.length, pageClamped * pageSize)} of {filteredOrders.length}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={pageClamped === 1}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 border rounded-lg bg-white disabled:opacity-50"
+                  >
+                    <ChevronLeft size={16} /> Prev
+                  </button>
+                  <span className="px-2">Page {pageClamped} / {totalPages}</span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={pageClamped === totalPages}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 border rounded-lg bg-white disabled:opacity-50"
+                  >
+                    Next <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
             )}
           </motion.div>
         </section>
 
-        {/* RIGHT: Notifications + Manage */}
+        {/* RIGHT: Insights + Notifications + Manage */}
         <aside className="col-span-12 lg:col-span-4 space-y-6">
+          {/* Insights panel */}
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-2xl shadow-lg border p-5"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-lg font-semibold flex items-center gap-2">
+                <BarChart3 size={18} className="text-indigo-500" /> Insights
+              </h4>
+              <span className="text-xs text-gray-500">Status distribution</span>
+            </div>
+            <div className="space-y-3">
+              {allowedStatuses.map((s) => {
+                const count = statusDistribution[s] || 0;
+                const total = orders.length || 1;
+                const pct = Math.round((count / total) * 100);
+                return (
+                  <div key={s}>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-700">{statusLabels[s]}</span>
+                      <span className="text-gray-500">{count} • {pct}%</span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1">
+                      <div
+                        className={`h-2 ${
+                          s === "placed" ? "bg-yellow-400" :
+                          s === "confirmed" ? "bg-purple-400" :
+                          s === "preparing" ? "bg-blue-400" :
+                          s === "out-for-delivery" ? "bg-indigo-400" :
+                          s === "delivered" ? "bg-green-500" :
+                          "bg-red-400"
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+
           {/* Notifications panel */}
           <motion.div
             initial={{ opacity: 0, y: 18 }}
@@ -876,15 +1371,26 @@ export default function AdminDashboard() {
 
       {/* Restaurants list */}
       <div className="mt-8">
-        <h3 className="text-xl font-semibold mb-4 text-gray-800">📋 Restaurants</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xl font-semibold text-gray-800">📋 Restaurants</h3>
+          <div className="relative">
+            <Search size={16} className="absolute left-2 top-2.5 text-gray-400" />
+            <input
+              value={restSearch}
+              onChange={(e) => setRestSearch(e.target.value)}
+              placeholder="Search restaurants"
+              className="border rounded-lg pl-7 pr-3 py-1.5 text-sm w-64"
+            />
+          </div>
+        </div>
 
         {loading ? (
           <p className="text-gray-500">Loading...</p>
-        ) : restaurants.length === 0 ? (
-          <p className="text-gray-500">No restaurants available</p>
+        ) : filteredRestaurants.length === 0 ? (
+          <p className="text-gray-500">No restaurants found</p>
         ) : (
           <div className="grid gap-6 md:grid-cols-2">
-            {restaurants.map((rest, idx) => (
+            {filteredRestaurants.map((rest, idx) => (
               <motion.div
                 key={rest._id || idx}
                 initial={{ opacity: 0, y: 18 }}

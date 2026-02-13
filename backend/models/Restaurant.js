@@ -18,7 +18,6 @@ const RestaurantSchema = new mongoose.Schema(
       trim: true,
       minlength: [2, "Name must be at least 2 characters long"],
       maxlength: [100, "Name cannot exceed 100 characters"],
-      index: true,
     },
     description: {
       type: String,
@@ -38,7 +37,6 @@ const RestaurantSchema = new mongoose.Schema(
       required: [true, "Location (city/area) is required"],
       trim: true,
       minlength: [2, "Location must be at least 2 characters"],
-      index: true,
     },
     coords: {
       type: CoordsSchema,
@@ -100,7 +98,6 @@ const RestaurantSchema = new mongoose.Schema(
           arr.every((tag) => typeof tag === "string" && tag.trim().length > 0),
         message: "Tags must be non-empty strings",
       },
-      index: true,
     },
     isPromoted: { type: Boolean, default: false },
 

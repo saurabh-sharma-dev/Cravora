@@ -2,7 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Optional custom styles */
+:root {
+  --color-brand: #0d9488;
+  --color-accent: #ea580c;
+  --delivery-threshold: 500;
+  --delivery-fee: 30;
+  --touch-min: 44px;
+  /* Mobile layout – safe areas and nav */
+  --header-height: 56px;
+  --bottom-nav-height: 64px;
+  --bottom-nav-space: 96px; /* space reserved above bottom nav (nav + safe area) */
+  --page-padding-x: 1rem;
+  --page-padding-x-sm: 1.25rem;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+}
+
 body {
-  @apply bg-gray-50;
+  overflow-x: hidden;
+}
+
+body {
+  @apply bg-surface-50 text-stone-800 antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  overflow-x: hidden;
+}
+
+/* Prevent zoom on input focus on iOS - 16px minimum */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+textarea {
+  font-size: 16px !important;
+}
+
+/* Touch-friendly tap targets */
+.touch-target {
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
+}
+
+/* App-like safe area for bottom nav on mobile */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Page layout – use on main content so content stays above bottom nav on mobile */
+.page-content-mobile {
+  padding-bottom: var(--bottom-nav-space);
+}
+@media (min-width: 768px) {
+  .page-content-mobile {
+    padding-bottom: 1.5rem;
+  }
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-stone-100 rounded-full;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-stone-300 rounded-full hover:bg-stone-400;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Price / numbers - tabular for alignment */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }

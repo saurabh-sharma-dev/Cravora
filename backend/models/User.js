@@ -22,7 +22,6 @@ const UserSchema = new mongoose.Schema(
         /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,})+$/,
         "Please provide a valid email address",
       ],
-      index: true,
     },
     password: {
       type: String,
@@ -51,7 +50,6 @@ const UserSchema = new mongoose.Schema(
       type: String,
       enum: ["user", "admin"],
       default: "user",
-      index: true,
     },
     isVerified: { type: Boolean, default: false },
     resetPasswordToken: { type: String, select: false },

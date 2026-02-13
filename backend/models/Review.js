@@ -7,13 +7,11 @@ const ReviewSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "User reference is required"],
-      index: true,
     },
     restaurant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Restaurant",
       required: [true, "Restaurant reference is required"],
-      index: true,
     },
     rating: {
       type: Number,

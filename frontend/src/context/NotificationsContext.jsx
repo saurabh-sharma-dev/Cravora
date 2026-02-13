@@ -46,8 +46,8 @@ export const NotificationsProvider = ({ children }) => {
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              className={`rounded-xl shadow-lg border p-3 bg-white ${
-                t.type === "success" ? "border-green-200" : t.type === "error" ? "border-red-200" : "border-gray-200"
+              className={`rounded-xl shadow-card border p-3 bg-white ${
+                t.type === "success" ? "border-emerald-200 bg-emerald-50/50" : t.type === "error" ? "border-red-200 bg-red-50/50" : "border-stone-200"
               }`}
             >
               <div className="flex items-start gap-3">

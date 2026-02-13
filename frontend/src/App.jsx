@@ -17,6 +17,9 @@ import Register from "./pages/Register";
 import OrderConfirmationPage from "./pages/OrderConfirmationPage";
 import OrderSuccessPage from "./pages/OrderSuccessPage";
 import MyOrdersPage from "./pages/MyOrdersPage";
+import FavoritesPage from "./pages/FavoritesPage";
+import NotFoundPage from "./pages/NotFoundPage";
+import BottomNav from "./components/BottomNav";
 
 // Admin Pages
 import AdminLogin from "./pages/admin/AdminLogin";
@@ -28,8 +31,9 @@ import { AuthProvider, AuthContext } from "./context/AuthContext";
 import { LocationProvider } from "./context/LocationContext";
 import { SearchProvider } from "./context/SearchContext";
 import { ThemeProvider } from "./context/ThemeContext";
+import { FavoritesProvider } from "./context/FavoritesContext";
 
-// NEW: Notifications + Socket providers
+// Notifications + Socket providers
 import { NotificationsProvider } from "./context/NotificationsContext";
 import { SocketProvider } from "./context/SocketProvider";
 
@@ -48,23 +52,24 @@ function App() {
     // Keep your existing providers
     <AuthProvider>
       <CartProvider>
-        <LocationProvider>
-          <SearchProvider>
-            <ThemeProvider>
-              {/* Wrap the actual UI with Notifications + Socket */}
-              <NotificationsProvider>
-                <SocketProvider>
-                  <div className="font-sans min-h-screen flex flex-col bg-gray-50">
+        <FavoritesProvider>
+          <LocationProvider>
+            <SearchProvider>
+              <ThemeProvider>
+                <NotificationsProvider>
+                  <SocketProvider>
+                    <div className="font-sans min-h-screen flex flex-col bg-surface-50 text-stone-800 overflow-x-hidden">
                     {/* Header */}
                     <Header />
 
-                    {/* Main Content */}
-                    <main className="flex-1 container mx-auto px-4 py-6">
+                    {/* Main Content – one structure for all pages; space above bottom nav on mobile */}
+                    <main className="flex-1 w-full min-h-0 px-4 sm:px-5 py-4 sm:py-6 page-content-mobile">
                       <Routes>
                         {/* Public Pages */}
                         <Route path="/" element={<Home />} />
                         <Route path="/restaurants/:id" element={<RestaurantPage />} />
                         <Route path="/cart" element={<CartPage />} />
+                        <Route path="/favorites" element={<FavoritesPage />} />
 
                         {/* Auth Pages */}
                         <Route path="/login" element={<Login />} />
@@ -115,19 +120,23 @@ function App() {
                           }
                         />
 
-                        {/* Fallback */}
-                        <Route path="*" element={<p className="text-center mt-10">Page not found</p>} />
+                        {/* 404 */}
+                        <Route path="*" element={<NotFoundPage />} />
                       </Routes>
                     </main>
 
                     {/* Footer */}
                     <Footer />
-                  </div>
-                </SocketProvider>
-              </NotificationsProvider>
-            </ThemeProvider>
-          </SearchProvider>
-        </LocationProvider>
+
+                    {/* Bottom Nav (mobile) */}
+                    <BottomNav />
+                    </div>
+                  </SocketProvider>
+                </NotificationsProvider>
+              </ThemeProvider>
+            </SearchProvider>
+          </LocationProvider>
+        </FavoritesProvider>
       </CartProvider>
     </AuthProvider>
   );

@@ -8,7 +8,6 @@ const OrderItemSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "MenuItem",
       required: [true, "Menu item reference is required"],
-      index: true,
     },
     name: {
       type: String,
@@ -70,7 +69,6 @@ const OrderSchema = new mongoose.Schema(
         "cancelled",
       ],
       default: "placed",
-      index: true,
     },
     address: {
       type: String,

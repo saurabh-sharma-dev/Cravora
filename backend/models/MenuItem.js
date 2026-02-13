@@ -7,7 +7,6 @@ const MenuItemSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Restaurant",
       required: [true, "Restaurant reference is required"],
-      index: true,
     },
     name: {
       type: String,
@@ -15,7 +14,6 @@ const MenuItemSchema = new mongoose.Schema(
       trim: true,
       minlength: [2, "Name must be at least 2 characters long"],
       maxlength: [100, "Name cannot exceed 100 characters"],
-      index: true,
     },
     description: {
       type: String,
@@ -50,7 +48,6 @@ const MenuItemSchema = new mongoose.Schema(
       trim: true,
       enum: ["starter", "main course", "dessert", "beverage", "snack", "other"],
       default: "other",
-      index: true,
     },
     rating: {
       type: Number,
